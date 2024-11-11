@@ -118,15 +118,64 @@ def get_people():
     elif request.method== 'POST':
 
         data_people= request.json
+        
         errors={}
+        
         if data_people['name']  is None:
             errors['name']= "Debe ingresar un nombre"
-    
+        if data_people['url_image_people'] is None:
+            errors['url_image_people'] = "Debe ingresar una url para obtener una imagen del personaje"   
+        if data_people['description_people'] is None:
+            errors['description_people'] ="Debe ingresar una descripcion para el personaje"
     
     elif request.method == 'PUT':
+       data_people = request.json
+       id_people = data_people.get('id')
+       people_find= People.query.filter_by(id=id_people).first()
 
-    elif request.method == 'DELETE':        
+    if people_find is None:
+        ({"message": "lo siento, no se encuentra el personaje al que quiere modificar"}),400
 
+        errors={}
+
+        if not data_people.get('name'):
+            errors['name'] = " Debe ingresar un nombre válido"
+        if data_people['url_image_people'] is None:
+            errors['url_image_people'] = "Debe ingresar una url para obtener una imagen del personaje"
+        if data_people['description_people'] is None:
+            errors['description_people'] = " Debe ingresar una descripcion del personaje"
+    
+        if errors:
+            return jsonify({"errors":errors})
+    
+        people_find.name= data_people['name']
+        people_find.url_image_people= data_people['url_image_people']
+        people_find.description_people= data_people['description_people']
+
+        db.session.commit()
+
+        return jsonify({
+            "message": "personaje actualizado correctamente",
+            "Personaje":{
+                "name": people_find.name,
+                "url_image_people": people_find.url_image_people,
+                "description_people": people_find.description_people
+            }
+        }),200
+
+    elif request.method == 'DELETE':   
+
+        data_people= request.json
+        id_people= data_people.get('id')
+        people_remove= People.query.filter_by(id=id_people).first()
+
+        if people_remove is None:
+            return jsonify({"message": "El personaje que intenta eliminar, no se encuentra en nuestro sistema"}),400     
+
+        db.session.delete(people_remove)
+        db.session.commit()
+
+        return jsonify({"message": "Personaje eliminado satisfactoriamente"}),200
 
 # this only runs if `$ python src/app.py` is executed
 if __name__ == '__main__':
