@@ -13,8 +13,16 @@ from models import db, User,Character,People,Planet,Starship
 import re
 from werkzeug.security import generate_password_hash
 from werkzeug.security import check_password_hash
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from datetime import timedelta
+from dotenv import load_dotenv
 
+load_dotenv()
 app = Flask(__name__)
+app.config["JWT_SECRET_KEY"]= os.getenv("JWT_SECRET_KEY")
+app.config["JWT_ACCESS_TOKEN_EXPIRES"]= timedelta(minutes=int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES",15)))
+jwt = JWTManager(app)
+
 app.url_map.strict_slashes = False
 
 db_url = os.getenv("DATABASE_URL")
@@ -39,64 +47,86 @@ def handle_invalid_usage(error):
 def sitemap():
     return generate_sitemap(app)
 
-@app.route('/user', methods=['GET'])
-def handle_hello():
+# @app.route('/user', methods=['GET'])
+# def handle_hello():
 
-    response_body = {
-        "msg": "Hello, this is your GET /user response "
-    }
+#     response_body = {
+#         "msg": "Hello, this is your GET /user response "
+#     }
 
-    return jsonify(response_body), 200
+#     return jsonify(response_body), 200
 
 def is_valid_email(email):
     email_regex = r'^[\w\.-]+@[\w\.-]+\.\w+$'
     return re.match(email_regex,email) is not None
 
+#para actualizar la contraseña de usuarios que ingrese manualmente sin hashear la pass
+@app.route('/update_password', methods=['POST'])
+def update_password():
+    user_data = request.json
+
+    # Busca el usuario
+    user = User.query.filter_by(email=user_data['email']).first()
+
+    if user:
+        # Actualiza la contraseña con hash
+        user.password = generate_password_hash(user_data['password'])
+        db.session.commit()
+        return jsonify({"message": "Contraseña actualizada correctamente"}), 200
+    else:
+        return jsonify({"error": "Usuario no encontrado"}), 404
+
 @app.route('/user', methods=['POST'])
 def register_user():
-    user_data=  request.json
+    user_data = request.json
+    errors = {}
 
-    errors={}
+    # Validación del email
+    if 'email' not in user_data or not is_valid_email(user_data['email']):
+        errors['email'] = "El formato del email es invalido"
+    
+    # Validación de la contraseña
+    if 'password' not in user_data or len(user_data['password']) < 8:
+        errors['password'] = "La contraseña no se ingreso o no tiene 8 caracteres"
 
-    if 'email'not in user_data or not is_valid_email(user_data['email']):
-        errors['email']="El formato del email es invalido"
-    if 'password' not in user_data or len(user_data['password'])<8:
-        errors['password']="La contraseña no se ingreso o no tiene 8 caracteres"
-
+    # Si hay errores de validación, retornamos el mensaje de error
     if errors:
-        return jsonify({"errors",errors}),400
+        return jsonify({"errors": errors}), 400
 
-    password_hash= generate_password_hash(user_data['password'])
+    # Si no hay errores, creamos el nuevo usuario
+    password_hash = generate_password_hash(user_data['password'])
 
-    new_user= User(email= user_data['email'],password=password_hash)
+    new_user = User(email=user_data['email'], password=password_hash)
     db.session.add(new_user)
     db.session.commit()
     
-    return jsonify({"message":"Usuario registrado correctamente"}), 200
+    return jsonify({"message": "Usuario registrado correctamente"}), 200
 
-@app.route('/user', methods=['POST'])
+@app.route('/login', methods=['POST'])
 def login_user():
     
     user_login=  request.json
-
+    print(user_login)
     errors={}
 
     if 'email'not in user_login or not is_valid_email(user_login['email']):
         errors['email']="El formato del email es invalido"
-    if 'password' not in user_login or len(user_login['password'])<8:
+    if 'password' not in user_login or not isinstance(user_login['password'],str) or len(user_login['password'])<8:
         errors['password']="La contraseña no se ingreso o no tiene 8 caracteres"
 
     if errors:
-        return jsonify({"errors",errors}),400
+        return jsonify({"errors":errors}),400
 
-    data_login= User.query.filter.by(email=user_login['email']).first()
+    data_login= User.query.filter_by(email=user_login['email']).first()
 
     if data_login is None or not check_password_hash(data_login.password,user_login['password']):
         return jsonify({"message":"No se encuentra el usuario o el password es incorrecto"}),400
     
-    return jsonify({"message":"Usuario registrado correctamente"}), 200
+    access_token= create_access_token(identity=data_login.email)
+    
+    return jsonify({"message":"Login exitoso...", "access_token": access_token}), 200
 ############################METHODS GET###############################################
-@app.route('/people', methods=[GET,POST,PUT,DELETE])
+@app.route('/people', methods=['GET','POST','PUT','DELETE'])
 def get_people():
    
     if request.method== 'GET':
@@ -104,7 +134,7 @@ def get_people():
         peoples=People.query.all()
 
         if peoples is None:
-            return jsonify({"message":"lo siento, no sé encontro ningun personaje"}), 400
+            return jsonify({"message": "lo siento, no sé encontro ningun personaje"}), 400
       
         people_list= [
                     {  
@@ -113,7 +143,7 @@ def get_people():
                         "force_syde":People.force_side
                     }for people in peoples
                  ]
-        return jsonify({"peoples":people_list}),200 
+        return jsonify({"peoples": people_list}),200 
     
     elif request.method== 'POST':
 
@@ -146,7 +176,7 @@ def get_people():
             errors['description_people'] = " Debe ingresar una descripcion del personaje"
     
         if errors:
-            return jsonify({"errors":errors})
+            return jsonify({"errors": errors})
     
         people_find.name= data_people['name']
         people_find.url_image_people= data_people['url_image_people']
